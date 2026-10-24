@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>iPhone Ringtone Maker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="iPhone Ringtone Maker">
+<meta name="theme-color" content="#0f1115">
+<link rel="icon" href="ringtone-maker-icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="ringtone-maker-icon.png">
+<style>
+  :root { --bg:#0f1115; --card:#1a1d24; --line:#2a2f3a; --text:#f2f4f8; --muted:#9aa3b2; --accent:#ff9f0a; --accent2:#ff453a; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         padding:max(16px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom)); }
+  .wrap { max-width:640px; margin:0 auto; }
+  h1 { font-size:26px; margin:6px 0 2px; }
+  .sub { color:var(--muted); margin:0 0 16px; font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; margin-bottom:14px; }
+  .drop { display:block; text-align:center; padding:26px 12px; border:2px dashed var(--line); border-radius:14px; color:var(--muted); cursor:pointer; }
+  .drop b { color:var(--text); display:block; font-size:17px; margin-bottom:4px; }
+  .drop.has { border-style:solid; padding:12px; text-align:left; }
+  input[type=file] { display:none; }
+  canvas { width:100%; height:110px; display:block; border-radius:10px; background:#12151b; touch-action:none; }
+  .row { display:flex; align-items:center; gap:10px; margin-top:12px; }
+  .row label { flex:0 0 78px; color:var(--muted); font-size:14px; }
+  .row input[type=range] { flex:1; accent-color:var(--accent); min-width:0; }
+  .row output { flex:0 0 52px; text-align:right; font-variant-numeric:tabular-nums; font-size:14px; }
+  .times { display:flex; justify-content:space-between; font-size:13px; color:var(--muted); margin-top:8px; font-variant-numeric:tabular-nums; }
+  .times b { color:var(--accent); }
+  button, .btn { appearance:none; border:0; border-radius:12px; padding:14px 16px; font-size:16px; font-weight:600; width:100%; cursor:pointer; background:var(--line); color:var(--text); }
+  button.primary { background:var(--accent); color:#1a1200; }
+  button:disabled { opacity:.4; cursor:default; }
+  .btns { display:grid; gap:10px; margin-top:12px; }
+  .btns.two { grid-template-columns:1fr 1fr; }
+  input[type=text] { width:100%; background:#12151b; border:1px solid var(--line); border-radius:10px; color:var(--text); padding:12px; font-size:16px; }
+  select { background:#12151b; border:1px solid var(--line); border-radius:10px; color:var(--text); padding:11px; font-size:16px; flex:1; }
+  .msg { margin-top:10px; font-size:14px; min-height:20px; color:var(--muted); }
+  .msg.err { color:var(--accent2); }
+  .msg.ok { color:#32d74b; }
+  details { color:var(--muted); font-size:14px; }
+  details summary { cursor:pointer; color:var(--text); font-weight:600; }
+  details ol { padding-left:20px; margin:10px 0 0; }
+  details li { margin-bottom:6px; }
+  .hint { color:var(--muted); font-size:13px; margin-top:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔔 iPhone Ringtone Maker</h1>
+  <p class="sub">Pick a song, choose up to 30 seconds, export an iPhone ringtone.</p>
+
+  <div class="card">
+    <label class="drop" id="drop">
+      <b id="dropTitle">Choose an audio file</b>
+      <span id="dropSub">MP3, M4A, WAV, etc. Everything stays on your device.</span>
+      <input type="file" id="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.flac,.mp4">
+    </label>
+  </div>
+
+  <div class="card" id="editor" style="display:none">
+    <canvas id="wave"></canvas>
+    <div class="times"><span>Start <b id="tStart">0:00.0</b></span><span>Length <b id="tLen">30.0s</b></span><span>End <b id="tEnd">0:30.0</b></span></div>
+    <div class="hint">Drag on the waveform to move the ringtone window.</div>
+
+    <div class="row"><label for="start">Start</label><input type="range" id="start" min="0" max="100" step="0.1" value="0"><output id="oStart">0.0s</output></div>
+    <div class="row"><label for="len">Length</label><input type="range" id="len" min="1" max="30" step="0.5" value="30"><output id="oLen">30s</output></div>
+    <div class="row"><label for="fin">Fade in</label><input type="range" id="fin" min="0" max="5" step="0.1" value="0"><output id="oFin">0.0s</output></div>
+    <div class="row"><label for="fout">Fade out</label><input type="range" id="fout" min="0" max="5" step="0.1" value="1"><output id="oFout">1.0s</output></div>
+
+    <div class="btns"><button id="play">▶ Preview</button></div>
+  </div>
+
+  <div class="card" id="exportCard" style="display:none">
+    <div class="row" style="margin-top:0"><label for="name">Name</label><input type="text" id="name" placeholder="Ringtone name"></div>
+    <div class="row"><label for="fmt">Format</label>
+      <select id="fmt">
+        <option value="m4r">M4R (ringtone — Mac / Finder / iTunes)</option>
+        <option value="m4a">M4A (for GarageBand on iPhone)</option>
+      </select>
+    </div>
+    <div class="btns two">
+      <button class="primary" id="share">Share / Save to Files</button>
+      <button id="download">Download</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>How to set it as your ringtone</summary>
+      <ol>
+        <li><b>On iPhone only:</b> export as <b>M4A</b>, tap Share → Save to Files. Open <b>GarageBand</b> → Audio Recorder → Tracks view → Loop button → Files → Browse items, and import your file. Trim it to 30 seconds or less.</li>
+        <li>Tap ▾ → My Songs. Press and hold the project → Share → <b>Ringtone</b> → Export → <b>Use sound as</b> → Standard Ringtone.</li>
+        <li><b>With a Mac:</b> export as <b>M4R</b>, then drag it onto your iPhone in Finder (Sounds, or the General tab). Then pick it in Settings → Sounds &amp; Haptics → Ringtone.</li>
+      </ol>
+    </details>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const MAX_LEN = 30;
+  let ctx, buf, peaks = null, baseName = 'Ringtone';
+  let start = 0, len = MAX_LEN, src = null, rafId = 0, playT0 = 0;
+
+  const fmtT = s => { const m = Math.floor(s / 60); return m + ':' + (s - m * 60).toFixed(1).padStart(4, '0'); };
+  const getCtx = () => ctx || (ctx = new (window.AudioContext || window.webkitAudioContext)());
+  const setMsg = (t, c = '') => { const m = $('msg'); m.textContent = t; m.className = 'msg ' + c; };
+
+  // ---------- Load ----------
+  $('file').addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    stop();
+    $('dropTitle').textContent = 'Loading…';
+    try {
+      const ab = await f.arrayBuffer();
+      buf = await new Promise((res, rej) => getCtx().decodeAudioData(ab, res, rej));
+    } catch (err) {
+      $('dropTitle').textContent = 'Could not read that file';
+      $('dropSub').textContent = 'Try an MP3, M4A or WAV file.';
+      return;
+    }
+    baseName = f.name.replace(/\.[^.]+$/, '') || 'Ringtone';
+    $('dropTitle').textContent = f.name;
+    $('dropSub').textContent = fmtT(buf.duration) + ' · tap to choose another';
+    $('drop').classList.add('has');
+    $('name').value = baseName;
+    len = Math.min(MAX_LEN, Math.max(1, Math.floor(buf.duration)));
+    $('len').max = Math.min(MAX_LEN, Math.max(1, Math.floor(buf.duration)));
+    $('len').value = len;
+    start = 0;
+    $('editor').style.display = $('exportCard').style.display = '';
+    computePeaks();
+    sync();
+  });
+
+  // ---------- Waveform ----------
+  const cv = $('wave'), g = cv.getContext('2d');
+  function computePeaks() {
+    const w = cv.clientWidth * (window.devicePixelRatio || 1);
+    cv.width = w; cv.height = cv.clientHeight * (window.devicePixelRatio || 1);
+    const d = buf.getChannelData(0), step = Math.max(1, Math.floor(d.length / w));
+    peaks = new Float32Array(w);
+    for (let x = 0; x < w; x++) {
+      let mx = 0; const s = x * step;
+      for (let i = 0; i < step; i += Math.max(1, step >> 6)) { const v = Math.abs(d[s + i] || 0); if (v > mx) mx = v; }
+      peaks[x] = mx;
+    }
+  }
+  function draw(playPos) {
+    if (!buf || !peaks) return;
+    const w = cv.width, h = cv.height, mid = h / 2;
+    g.clearRect(0, 0, w, h);
+    const x0 = start / buf.duration * w, x1 = (start + len) / buf.duration * w;
+    g.fillStyle = 'rgba(255,159,10,.18)'; g.fillRect(x0, 0, x1 - x0, h);
+    for (let x = 0; x < w; x++) {
+      const inside = x >= x0 && x <= x1;
+      g.fillStyle = inside ? '#ff9f0a' : '#4a5160';
+      const a = Math.max(1, peaks[x] * mid * 0.95);
+      g.fillRect(x, mid - a, 1, a * 2);
+    }
+    g.fillStyle = '#fff'; g.fillRect(x0, 0, 2, h); g.fillRect(x1 - 2, 0, 2, h);
+    if (playPos != null) { g.fillStyle = '#32d74b'; g.fillRect(playPos / buf.duration * w, 0, 2, h); }
+  }
+  let dragOff = null;
+  const timeAt = e => { const r = cv.getBoundingClientRect(); return (e.clientX - r.left) / r.width * buf.duration; };
+  cv.addEventListener('pointerdown', e => {
+    if (!buf) return;
+    cv.setPointerCapture(e.pointerId);
+    const t = timeAt(e);
+    dragOff = (t >= start && t <= start + len) ? t - start : len / 2;
+    move(e);
+  });
+  cv.addEventListener('pointermove', e => { if (dragOff != null) move(e); });
+  cv.addEventListener('pointerup', () => dragOff = null);
+  cv.addEventListener('pointercancel', () => dragOff = null);
+  function move(e) { start = Math.round((timeAt(e) - dragOff) * 10) / 10; sync(); }
+
+  // ---------- Controls ----------
+  function sync() {
+    if (!buf) return;
+    len = Math.min(len, buf.duration);
+    start = Math.max(0, Math.min(start, buf.duration - len));
+    const sl = $('start'); sl.max = Math.max(0, buf.duration - len).toFixed(1); sl.value = start;
+    $('oStart').textContent = start.toFixed(1) + 's';
+    $('oLen').textContent = len.toFixed(len % 1 ? 1 : 0) + 's';
+    const fi = $('fin'), fo = $('fout');
+    fi.max = fo.max = Math.min(5, len / 2).toFixed(1);
+    $('oFin').textContent = (+fi.value).toFixed(1) + 's';
+    $('oFout').textContent = (+fo.value).toFixed(1) + 's';
+    $('tStart').textContent = fmtT(start); $('tLen').textContent = len.toFixed(1) + 's'; $('tEnd').textContent = fmtT(start + len);
+    draw();
+  }
+  $('start').addEventListener('input', e => { start = +e.target.value; sync(); });
+  $('len').addEventListener('input', e => { len = +e.target.value; sync(); });
+  $('fin').addEventListener('input', sync);
+  $('fout').addEventListener('input', sync);
+  window.addEventListener('resize', () => { if (buf) { computePeaks(); draw(); } });
+
+  // ---------- Preview ----------
+  function stop() {
+    if (src) { try { src.onended = null; src.stop(); } catch (e) {} src = null; }
+    cancelAnimationFrame(rafId);
+    $('play').textContent = '▶ Preview';
+    draw();
+  }
+  $('play').addEventListener('click', async () => {
+    if (!buf) return;
+    if (src) return stop();
+    const c = getCtx(); if (c.state === 'suspended') await c.resume();
+    const fi = +$('fin').value, fo = +$('fout').value;
+    src = c.createBufferSource(); src.buffer = buf;
+    const gn = c.createGain(); src.connect(gn); gn.connect(c.destination);
+    const t = c.currentTime + 0.05;
+    gn.gain.setValueAtTime(fi > 0 ? 0 : 1, t);
+    if (fi > 0) gn.gain.linearRampToValueAtTime(1, t + fi);
+    if (fo > 0) { gn.gain.setValueAtTime(1, t + len - fo); gn.gain.linearRampToValueAtTime(0, t + len); }
+    src.start(t, start, len);
+    src.onended = stop;
+    playT0 = t;
+    $('play').textContent = '■ Stop';
+    const tick = () => { if (!src) return; draw(start + Math.max(0, c.currentTime - playT0)); rafId = requestAnimationFrame(tick); };
+    tick();
+  });
+
+  // ---------- Encode (AAC in MP4 container) ----------
+  async function encode() {
+    if (!('AudioEncoder' in window) || !window.Mp4Muxer)
+      throw new Error('This browser can\u2019t encode AAC. Use Safari 16.4+ or Chrome, and check your connection.');
+    const sr = buf.sampleRate, ch = Math.min(2, buf.numberOfChannels);
+    const cfg = { codec: 'mp4a.40.2', sampleRate: sr, numberOfChannels: ch, bitrate: 160000 };
+    const sup = await AudioEncoder.isConfigSupported(cfg);
+    if (!sup.supported) throw new Error('AAC encoding isn\u2019t supported in this browser.');
+
+    const s0 = Math.floor(start * sr);
+    const n = Math.min(Math.floor(len * sr), buf.length - s0);
+    const fi = Math.floor(+$('fin').value * sr), fo = Math.floor(+$('fout').value * sr);
+    const data = [];
+    for (let c = 0; c < ch; c++) {
+      const a = buf.getChannelData(c).slice(s0, s0 + n);
+      for (let i = 0; i < fi && i < n; i++) a[i] *= i / fi;
+      for (let i = 0; i < fo && i < n; i++) a[n - 1 - i] *= i / fo;
+      data.push(a);
+    }
+    const target = new Mp4Muxer.ArrayBufferTarget();
+    const muxer = new Mp4Muxer.Muxer({ target, fastStart: 'in-memory', audio: { codec: 'aac', numberOfChannels: ch, sampleRate: sr } });
+    let encErr = null;
+    const enc = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: e => encErr = e });
+    enc.configure(cfg);
+    const CH = 4096;
+    for (let i = 0; i < n; i += CH) {
+      if (encErr) throw encErr;
+      const m = Math.min(CH, n - i), planar = new Float32Array(m * ch);
+      for (let c = 0; c < ch; c++) planar.set(data[c].subarray(i, i + m), c * m);
+      enc.encode(new AudioData({ format: 'f32-planar', sampleRate: sr, numberOfFrames: m, numberOfChannels: ch, timestamp: Math.round(i / sr * 1e6), data: planar }));
+      if (enc.encodeQueueSize > 16) await new Promise(r => setTimeout(r, 0));
+    }
+    await enc.flush();
+    if (encErr) throw encErr;
+    muxer.finalize();
+    return new Blob([target.buffer], { type: 'audio/mp4' });
+  }
+
+  function fileName() {
+    let n = ($('name').value || 'Ringtone').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Ringtone';
+    return n + '.' + $('fmt').value;
+  }
+
+  async function make(btn, action) {
+    if (!buf) return;
+    stop();
+    const label = btn.textContent; btn.disabled = true; btn.textContent = 'Encoding…'; setMsg('');
+    try {
+      const blob = await encode();
+      const name = fileName();
+      await action(blob, name);
+    } catch (e) {
+      if (e && e.name === 'AbortError') setMsg('');
+      else setMsg(e.message || String(e), 'err');
+    } finally { btn.disabled = false; btn.textContent = label; }
+  }
+
+  function save(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+
+  $('download').addEventListener('click', e => make(e.currentTarget, (blob, name) => { save(blob, name); setMsg('Saved ' + name, 'ok'); }));
+  $('share').addEventListener('click', e => make(e.currentTarget, async (blob, name) => {
+    const file = new File([blob], name, { type: 'audio/mp4' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: name });
+      setMsg('Shared ' + name, 'ok');
+    } else { save(blob, name); setMsg('Sharing isn\u2019t available here, so it was downloaded: ' + name, 'ok'); }
+  }));
+})();
+</script>
+</body>
+</html>
