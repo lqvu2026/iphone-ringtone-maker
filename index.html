@@ -77,8 +77,9 @@
     <div class="row" style="margin-top:0"><label for="name">Name</label><input type="text" id="name" placeholder="Ringtone name"></div>
     <div class="row"><label for="fmt">Format</label>
       <select id="fmt">
-        <option value="m4r">M4R (ringtone — Mac / Finder / iTunes)</option>
-        <option value="m4a">M4A (for GarageBand on iPhone)</option>
+        <option value="wav">WAV (best for GarageBand on iPhone)</option>
+        <option value="m4a">M4A (smaller file)</option>
+        <option value="m4r">M4R (ringtone — Mac / Finder only)</option>
       </select>
     </div>
     <div class="btns two">
@@ -92,9 +93,9 @@
     <details>
       <summary>How to set it as your ringtone</summary>
       <ol>
-        <li><b>On iPhone only:</b> export as <b>M4A</b>, tap Share → Save to Files. Open <b>GarageBand</b> → Audio Recorder → Tracks view → Loop button → Files → Browse items, and import your file. Trim it to 30 seconds or less.</li>
+        <li><b>On iPhone only:</b> export as <b>WAV</b> (or M4A), tap Share → Save to Files. Make sure the name ends in .wav / .m4a, not .txt. Open <b>GarageBand</b> → Audio Recorder → Tracks view → Loop button → Files → Browse items, and import your file. Trim it to 30 seconds or less.</li>
         <li>Tap ▾ → My Songs. Press and hold the project → Share → <b>Ringtone</b> → Export → <b>Use sound as</b> → Standard Ringtone.</li>
-        <li><b>With a Mac:</b> export as <b>M4R</b>, then drag it onto your iPhone in Finder (Sounds, or the General tab). Then pick it in Settings → Sounds &amp; Haptics → Ringtone.</li>
+        <li><b>With a Mac:</b> export as <b>M4R</b> (Mac only), then drag it onto your iPhone in Finder (Sounds, or the General tab). Then pick it in Settings → Sounds &amp; Haptics → Ringtone.</li>
       </ol>
     </details>
   </div>
@@ -267,6 +268,31 @@
     return new Blob([target.buffer], { type: 'audio/mp4' });
   }
 
+  function encodeWav() {
+    const sr = buf.sampleRate, ch = Math.min(2, buf.numberOfChannels);
+    const s0 = Math.floor(start * sr);
+    const n = Math.min(Math.floor(len * sr), buf.length - s0);
+    const fi = Math.floor(+$('fin').value * sr), fo = Math.floor(+$('fout').value * sr);
+    const out = new DataView(new ArrayBuffer(44 + n * ch * 2));
+    const w = (o, t) => { for (let i = 0; i < t.length; i++) out.setUint8(o + i, t.charCodeAt(i)); };
+    w(0, 'RIFF'); out.setUint32(4, 36 + n * ch * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+    out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, ch, true);
+    out.setUint32(24, sr, true); out.setUint32(28, sr * ch * 2, true); out.setUint16(32, ch * 2, true); out.setUint16(34, 16, true);
+    w(36, 'data'); out.setUint32(40, n * ch * 2, true);
+    const chans = []; for (let c = 0; c < ch; c++) chans.push(buf.getChannelData(c));
+    let o = 44;
+    for (let i = 0; i < n; i++) {
+      let gain = 1;
+      if (i < fi) gain = i / fi;
+      if (n - 1 - i < fo) gain = Math.min(gain, (n - 1 - i) / fo);
+      for (let c = 0; c < ch; c++) {
+        const v = Math.max(-1, Math.min(1, chans[c][s0 + i] * gain));
+        out.setInt16(o, v < 0 ? v * 0x8000 : v * 0x7fff, true); o += 2;
+      }
+    }
+    return new Blob([out.buffer], { type: 'audio/wav' });
+  }
+
   function fileName() {
     let n = ($('name').value || 'Ringtone').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Ringtone';
     return n + '.' + $('fmt').value;
@@ -277,7 +303,7 @@
     stop();
     const label = btn.textContent; btn.disabled = true; btn.textContent = 'Encoding…'; setMsg('');
     try {
-      const blob = await encode();
+      const blob = $('fmt').value === 'wav' ? encodeWav() : await encode();
       const name = fileName();
       await action(blob, name);
     } catch (e) {
@@ -295,7 +321,7 @@
 
   $('download').addEventListener('click', e => make(e.currentTarget, (blob, name) => { save(blob, name); setMsg('Saved ' + name, 'ok'); }));
   $('share').addEventListener('click', e => make(e.currentTarget, async (blob, name) => {
-    const file = new File([blob], name, { type: 'audio/mp4' });
+    const file = new File([blob], name, { type: blob.type });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], title: name });
       setMsg('Shared ' + name, 'ok');
