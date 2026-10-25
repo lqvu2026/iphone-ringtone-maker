@@ -17,7 +17,15 @@ A single-page web app that turns any song into an iPhone ringtone (30 seconds ma
 ## Publishing (GitHub Pages)
 Commit `index.html` and the icon PNG, wait 1-2 minutes, then Add to Home Screen in Safari. If the old version still shows, delete the shortcut, quit Safari, reload and add it again.
 
-## How to make a ringtone in GarageBand
+## Quickest way: Use as Ringtone (no GarageBand)
+1. Pick a song, choose up to 30 seconds, and set the fades.
+2. Choose **WAV** and tap **Share / Save to Files**.
+3. In the share sheet, tap **Use as Ringtone**.
+4. Choose **Standard Ringtone** (or assign it to a contact). You can change it later under Settings → Sounds & Haptics → Ringtone.
+
+If "Use as Ringtone" doesn't appear in the share sheet, use GarageBand instead (below).
+
+## Alternative: make a ringtone in GarageBand
 
 1. **Open GarageBand.**
 
@@ -51,5 +59,6 @@ GarageBand can import AIFF, WAV, CAF, Apple Loops, AAC, MP3 and MIDI files. File
 Export as M4R, then drag it onto your iPhone in Finder (Sounds, or the General tab). Pick it in Settings → Sounds & Haptics → Ringtone.
 
 ## Notes
+- **Use WAV.** It is the reliable format on iPhone. M4A/M4R are experimental: on some iPhones the AAC encoder produced a file that played as a repeating "ding" when used as a ringtone, so the app now re-decodes the file and refuses to export it if it doesn't match the original.
 - M4A/M4R export needs a browser with AAC encoding (WebCodecs): Safari 16.4+ or Chrome, plus the mp4-muxer library from a CDN. WAV export works everywhere.
 - Make sure the exported file name ends in `.wav` / `.m4a`, not `.txt`.

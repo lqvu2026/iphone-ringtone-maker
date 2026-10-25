@@ -78,8 +78,8 @@
     <div class="row"><label for="fmt">Format</label>
       <select id="fmt">
         <option value="wav">WAV (best for GarageBand on iPhone)</option>
-        <option value="m4a">M4A (smaller file)</option>
-        <option value="m4r">M4R (ringtone — Mac / Finder only)</option>
+        <option value="m4a">M4A (experimental)</option>
+        <option value="m4r">M4R (experimental, Mac / Finder)</option>
       </select>
     </div>
     <div class="btns two">
@@ -93,9 +93,10 @@
     <details>
       <summary>How to set it as your ringtone</summary>
       <ol>
-        <li><b>On iPhone only:</b> export as <b>WAV</b> (or M4A), tap Share → Save to Files. Make sure the name ends in .wav / .m4a, not .txt. Open <b>GarageBand</b> → Audio Recorder → Tracks view → Loop button → Files → Browse items, and import your file. Trim it to 30 seconds or less.</li>
-        <li>Tap ▾ → My Songs. Press and hold the project → Share → <b>Ringtone</b> → Export → <b>Use sound as</b> → Standard Ringtone.</li>
-        <li><b>With a Mac:</b> export as <b>M4R</b> (Mac only), then drag it onto your iPhone in Finder (Sounds, or the General tab). Then pick it in Settings → Sounds &amp; Haptics → Ringtone.</li>
+        <li>Choose <b>WAV</b>, tap <b>Share / Save to Files</b>, then tap <b>Use as Ringtone</b> in the share sheet.</li>
+        <li>Pick <b>Standard Ringtone</b> (or assign it to a contact). Change it anytime in Settings → Sounds &amp; Haptics → Ringtone.</li>
+        <li>If you don't see "Use as Ringtone": save to Files, then import it in <b>GarageBand</b> (Tracks view → Loop → Files) and use Share → Ringtone.</li>
+        <li><b>With a Mac:</b> export <b>M4R</b> and drag it onto your iPhone in Finder.</li>
       </ol>
     </details>
   </div>
@@ -235,9 +236,10 @@
     if (!('AudioEncoder' in window) || !window.Mp4Muxer)
       throw new Error('This browser can\u2019t encode AAC. Use Safari 16.4+ or Chrome, and check your connection.');
     const sr = buf.sampleRate, ch = Math.min(2, buf.numberOfChannels);
-    const cfg = { codec: 'mp4a.40.2', sampleRate: sr, numberOfChannels: ch, bitrate: 160000 };
-    const sup = await AudioEncoder.isConfigSupported(cfg);
-    if (!sup.supported) throw new Error('AAC encoding isn\u2019t supported in this browser.');
+    let cfg = { codec: 'mp4a.40.2', sampleRate: sr, numberOfChannels: ch, bitrate: 160000, aac: { format: 'aac' } };
+    let sup = await AudioEncoder.isConfigSupported(cfg);
+    if (!sup.supported) { delete cfg.aac; sup = await AudioEncoder.isConfigSupported(cfg); }
+    if (!sup.supported) throw new Error('AAC encoding isn\u2019t supported in this browser. Please use WAV.');
 
     const s0 = Math.floor(start * sr);
     const n = Math.min(Math.floor(len * sr), buf.length - s0);
@@ -252,7 +254,16 @@
     const target = new Mp4Muxer.ArrayBufferTarget();
     const muxer = new Mp4Muxer.Muxer({ target, fastStart: 'in-memory', audio: { codec: 'aac', numberOfChannels: ch, sampleRate: sr } });
     let encErr = null;
-    const enc = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: e => encErr = e });
+    let firstChunk = true;
+    const enc = new AudioEncoder({ output: (chunk, meta) => {
+      if (firstChunk) {
+        firstChunk = false;
+        const hdr = new Uint8Array(2); chunk.copyTo(hdr);
+        const adts = hdr[0] === 0xFF && (hdr[1] & 0xF0) === 0xF0;
+        if (adts || !(meta && meta.decoderConfig && meta.decoderConfig.description)) encErr = new Error('This browser produced AAC in a format that can\u2019t be saved correctly. Please use WAV.');
+      }
+      if (!encErr) muxer.addAudioChunk(chunk, meta);
+    }, error: e => encErr = e });
     enc.configure(cfg);
     const CH = 4096;
     for (let i = 0; i < n; i += CH) {
@@ -265,7 +276,26 @@
     await enc.flush();
     if (encErr) throw encErr;
     muxer.finalize();
-    return new Blob([target.buffer], { type: 'audio/mp4' });
+    const blob = new Blob([target.buffer], { type: 'audio/mp4' });
+    await verify(blob, data[0], sr);
+    return blob;
+  }
+
+  // Decode the exported file again and compare its loudness shape with the original.
+  async function verify(blob, orig, sr) {
+    const bad = new Error('The M4A/M4R file didn\u2019t come out right on this device (it would sound wrong). Please use WAV.');
+    let dec;
+    try { dec = await getCtx().decodeAudioData(await blob.arrayBuffer()); } catch (e) { throw bad; }
+    const d = dec.getChannelData(0), win = Math.floor(sr * 0.25);
+    if (Math.abs(dec.duration - orig.length / sr) > 0.5) throw bad;
+    const env = (a, n) => { const r = []; for (let i = 0; i + win <= n; i += win) { let t = 0; for (let j = i; j < i + win; j += 8) t += a[j] * a[j]; r.push(Math.sqrt(t / (win / 8))); } return r; };
+    const A = env(orig, orig.length), B = env(d, Math.min(d.length, orig.length));
+    const k = Math.min(A.length, B.length), a = A.slice(1, k - 1), b = B.slice(1, k - 1);
+    if (a.length < 3) return;
+    const ma = a.reduce((x, y) => x + y, 0) / a.length, mb = b.reduce((x, y) => x + y, 0) / b.length;
+    let sab = 0, saa = 0, sbb = 0;
+    for (let i = 0; i < a.length; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
+    if (mb < 1e-4 || (saa > 1e-9 && sab / Math.sqrt(saa * sbb || 1) < 0.85)) throw bad;
   }
 
   function encodeWav() {
